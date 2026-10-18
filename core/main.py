@@ -10,13 +10,15 @@ import logging
 logger = telebot.logger
 import requests
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 telebot.logger.setLevel(logging.INFO)
 import re
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 import threading
 from openai import APITimeoutError, APIConnectionError, APIStatusError
+user_click_cooldown = {}
+user_click_lock = threading.Lock()
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPEN_API_KEY")
@@ -106,6 +108,9 @@ def get_user_history(user_id: str, limit: int = 10):
 def handle_message(message):
     user_id = message.from_user.id
     user_text = message.text
+    if not user_text:
+        bot.reply_to(message, "لطفاً یک پیام متنی ارسال کنید.")
+        return
     if "پشتیبانی" in user_text:
         bot.reply_to(message, "" )
         return
@@ -164,34 +169,67 @@ def handle_message(message):
 
 
 def escape_markdown_v2(text: str) -> str:
-    parts = re.split(r'(```[\s\S]*?```|`[^`]*`)', text)
+    link_pattern = r'\[([^\]]+)\]\((https?://[^)\s]+)\)'
+    
+    parts = re.split(r'(```[\s\S]*?```|`[^`]*`|' + link_pattern + r')', text)
     escaped_parts = []
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    escape_chars = r'_*[]()~`>#+-=|{}.!\\'
+
     for i, part in enumerate(parts):
-        if i % 2 == 1:
+        if not part:
+            continue
+        if part.startswith('```') or part.startswith('`'):
             escaped_parts.append(part)
+        elif part.startswith('[') and '](' in part:
+            match = re.match(link_pattern, part)
+            if match:
+                link_text, link_url = match.groups()
+                escaped_text = re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', link_text)
+                escaped_parts.append(f"[{escaped_text}]({link_url})")
+            else:
+                escaped_parts.append(part)
         else:
             escaped = re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', part)
             escaped_parts.append(escaped)
+
     return "".join(escaped_parts)
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     user_id = str(call.from_user.id)
     action = call.data
+    now = datetime.now()
+    if user_id in user_click_cooldown:
+        if now - user_click_cooldown[user_id] < timedelta(seconds=1.5):
+            try:
+                bot.answer_callback_query(call.id, text="لطفاً کمی آرام‌تر کلیک کنید!", show_alert=False)
+            except Exception:
+                pass
+            return
+    user_click_cooldown[user_id] = now
+    action = call.data
     
     if action == "search_again":
-        bot.answer_callback_query(call.id, text="آماده دریافت جستجوی جدید...", show_alert=False)
-        bot.send_message(call.message.chat.id, "🔍 لطفاً محصول یا سوال جدید خود را وارد کنید:")
-        
+        try:
+            bot.answer_callback_query(call.id, text="آماده دریافت جستجوی جدید...", show_alert=False)
+            bot.send_message(call.message.chat.id, "🔍 لطفاً محصول یا سوال جدید خود را وارد کنید:")
+        except Exception:
+            pass
     elif action == "clear_history":
         clear_user_history_db(user_id)
-        bot.answer_callback_query(call.id, text="تاریخچه گفتگو با موفقیت پاک شد.", show_alert=False)
-        bot.edit_message_reply_markup(chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-        bot.send_message(call.message.chat.id, "🗑️ تاریخچه مکالمه شما پاک شد. از نو شروع می‌کنیم!")
+        try:
+            bot.send_message(call.message.chat.id, "🗑️ تاریخچه مکالمه شما پاک شد. از نو شروع می‌کنیم!")
+            bot.answer_callback_query(call.id, text="تاریخچه گفتگو با موفقیت پاک شد.", show_alert=False)
+            bot.edit_message_reply_markup(chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
+        except Exception:
+            pass
+        
         
     elif action == "view_cart":
-        bot.answer_callback_query(call.id, text="سبد خرید خالی است.", show_alert=False)
-        bot.send_message(call.message.chat.id, "🛒 سبد خرید شما در حال حاضر خالی است.")
+        try:
+            bot.answer_callback_query(call.id, text="سبد خرید خالی است.", show_alert=False)
+            bot.send_message(call.message.chat.id, "🛒 سبد خرید شما در حال حاضر خالی است.")
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
