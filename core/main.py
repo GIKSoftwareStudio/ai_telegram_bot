@@ -21,8 +21,10 @@ user_click_cooldown = {}
 user_click_lock = threading.Lock()
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPEN_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+print("Telegram API key loaded:", bool(OPENAI_API_KEY))
+print("Telegram Base URL:", OPENAI_BASE_URL)
 if not BOT_TOKEN:
     raise ValueError("خطا: توکن ربات تلگرام (BOT_TOKEN) در فایل .env یافت نشد!")
 bot = telebot.TeleBot(BOT_TOKEN)
