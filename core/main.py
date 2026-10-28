@@ -135,13 +135,17 @@ def handle_message(message):
     typing_thread = threading.Thread(target=typing_background_loop)
     typing_thread.start()
     try:
-        response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=history,
-            timeout=60.0
-            
+        response = requests.post(
+            OPENAI_BASE_URL,
+            json={
+                "message": history,
+                "user_id":str(user_id)
+            },
+            timeout=90
         )
-        ai_reply = response.choices[0].message.content
+        response.raise_for_status()
+        data = response.json()
+        ai_reply = data["choices"][0]["message"]["content"]
         if not ai_reply:
             ai_reply = "didnt get response from server"
         save_message(str(user_id), "assistant", ai_reply)
