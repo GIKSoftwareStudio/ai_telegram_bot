@@ -17,6 +17,7 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 import threading
 from openai import APITimeoutError, APIConnectionError, APIStatusError
+from requests.exceptions import Timeout, ConnectionError, HTTPError, RequestException
 user_click_cooldown = {}
 user_click_lock = threading.Lock()
 load_dotenv()
@@ -143,6 +144,8 @@ def handle_message(message):
             },
             timeout=90
         )
+        print("STATUS CODE:", response.status_code)
+        print("RESPONSE BODY:", response.text[:3000])
         response.raise_for_status()
         data = response.json()
         ai_reply = data["choices"][0]["message"]["content"]
@@ -162,7 +165,8 @@ def handle_message(message):
     except Exception as e:
         logger.exception("Unexpected error")
         ai_reply = "an unexpected error occurred, please try again Later"
-        print(e)
+        print(f"ERROR TYPE: {type(e).__name__}")
+        print(f"ERROR DETAILS: {e!r}")
     finally:
         stop_typing.set() 
         typing_thread.join(timeout=2)
