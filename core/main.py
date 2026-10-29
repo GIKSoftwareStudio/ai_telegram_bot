@@ -30,6 +30,7 @@ if not BOT_TOKEN:
     raise ValueError("خطا: توکن ربات تلگرام (BOT_TOKEN) در فایل .env یافت نشد!")
 bot = telebot.TeleBot(BOT_TOKEN)
 DB_NAME = "chat_history.db"
+user_chat_active = set()
 if OPENAI_BASE_URL:
     client = OpenAI(
         api_key=OPENAI_API_KEY,
@@ -40,6 +41,52 @@ else:
         api_key=OPENAI_API_KEY
     )
 print("Bot and AI clients are ready...")
+def create_welcome_keyboard():
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(InlineKeyboardButton("🚀 شروع گفتگو با مدل", callback_data="start_chat"),
+               InlineKeyboardButton("⚙️ Settings", callback_data="open_settings"),
+               InlineKeyboardButton("🌐 زبان / Language", callback_data="open_languages")
+            )
+    return markup
+
+
+
+def create_settings_keyboard():
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton(
+            "⬅️ بازگشت",
+            callback_data="back_to_welcome"
+        )
+    )
+    return markup
+
+
+
+
+def create_languages_keyboard():
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton(
+            "🇮🇷 فارسی",
+            callback_data="language_fa"
+        ),
+        InlineKeyboardButton(
+            "🇬🇧 English",
+            callback_data="language_en"
+        ),
+        InlineKeyboardButton(
+            "⬅️ بازگشت",
+            callback_data="back_to_welcome"
+        )
+    )
+    return markup
+
+
+
+
+
+
 
 def clear_user_history_db(user_id: str):
     conn = sqlite3.connect(DB_NAME)
@@ -49,13 +96,6 @@ def clear_user_history_db(user_id: str):
     conn.close()
 
 
-def create_action_keyboard():
-    markup = InlineKeyboardMarkup(row_width=2)
-    btn_search = InlineKeyboardButton("🔍 جستجوی مجدد", callback_data="search_again")
-    btn_clear = InlineKeyboardButton("🗑️ پاک کردن تاریخچه", callback_data="clear_history")
-    btn_cart = InlineKeyboardButton("🛒 مشاهده سبد خرید", callback_data="view_cart")
-    markup.add(btn_search, btn_clear, btn_cart)
-    return markup
 
 
 def init_db():
@@ -106,11 +146,29 @@ def get_user_history(user_id: str, limit: int = 10):
             "content": row[1]
         })
     return history
+@bot.message_handler(commands=["start"])
+def start_command(message):
+    user_id = message.from_user.id
+    user_chat_active.discard(user_id)
+    bot.send_message(
+        message.chat.id,
+        "سلام! 👋\n"
+        "به دستیار هوش مصنوعی خوش اومدی.\n\n"
+        "برای شروع، یکی از گزینه‌های زیر رو انتخاب کن:",
+        reply_markup = create_welcome_keyboard()
+    )
+                     
 
-@bot.message_handler(func= lambda message: True)
+@bot.message_handler(content_types=["text"])
 def handle_message(message):
     user_id = message.from_user.id
     user_text = message.text
+    if user_id not in user_chat_active:
+        bot.reply_to(
+            message,
+        "برای شروع گفتگو، ابتدا دستور /start رو بزن."
+        )
+        return
     if not user_text:
         bot.reply_to(message, "لطفاً یک پیام متنی ارسال کنید.")
         return
@@ -172,12 +230,11 @@ def handle_message(message):
     finally:
         stop_typing.set() 
         typing_thread.join(timeout=2)
-    markup = create_action_keyboard()
     try:
         sanitized_reply = escape_markdown_v2(ai_reply)
-        bot.reply_to(message, sanitized_reply, parse_mode='MarkdownV2', reply_markup=markup)
+        # this part should be fix 
     except Exception:
-        bot.reply_to(message, ai_reply, reply_markup=markup)
+        bot.reply_to(message)
     
 
 
@@ -206,43 +263,54 @@ def escape_markdown_v2(text: str) -> str:
             escaped_parts.append(escaped)
 
     return "".join(escaped_parts)
-@bot.callback_query_handler(func=lambda call: True)
+@bot.callback_query_handler(func=lambda call:True)
 def handle_callback_query(call):
-    user_id = str(call.from_user.id)
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
     action = call.data
-    now = datetime.now()
-    if user_id in user_click_cooldown:
-        if now - user_click_cooldown[user_id] < timedelta(seconds=1.5):
-            try:
-                bot.answer_callback_query(call.id, text="لطفاً کمی آرام‌تر کلیک کنید!", show_alert=False)
-            except Exception:
-                pass
-            return
-    user_click_cooldown[user_id] = now
-    action = call.data
-    
-    if action == "search_again":
+    bot.answer_callback_query(call.id)
+    if action == "start_chat":
+        user_chat_active.add(user_id)
         try:
-            bot.answer_callback_query(call.id, text="آماده دریافت جستجوی جدید...", show_alert=False)
-            bot.send_message(call.message.chat.id, "🔍 لطفاً محصول یا سوال جدید خود را وارد کنید:")
+            bot.delete_message(chat_id, message_id)
         except Exception:
             pass
-    elif action == "clear_history":
-        clear_user_history_db(user_id)
-        try:
-            bot.send_message(call.message.chat.id, "🗑️ تاریخچه مکالمه شما پاک شد. از نو شروع می‌کنیم!")
-            bot.answer_callback_query(call.id, text="تاریخچه گفتگو با موفقیت پاک شد.", show_alert=False)
-            bot.edit_message_reply_markup(chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=None)
-        except Exception:
-            pass
-        
-        
-    elif action == "view_cart":
-        try:
-            bot.answer_callback_query(call.id, text="سبد خرید خالی است.", show_alert=False)
-            bot.send_message(call.message.chat.id, "🛒 سبد خرید شما در حال حاضر خالی است.")
-        except Exception:
-            pass
+        bot.send_message(
+            chat_id,
+            "💬 گفتگو با مدل شروع شد!\n"
+            "پیامت رو ارسال کن."
+        )
+    elif action == "open_settings":
+        bot.edit_message_text(
+            "⚙️ پنل تنظیمات\n\n"
+            "گزینه‌های این بخش رو بعداً اضافه می‌کنیم.",
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=create_settings_keyboard()
+        )
+    elif action == "open_languages":
+        bot.edit_message_text(
+            "🌐 انتخاب زبان / Choose language\n\n"
+            "این بخش فعلاً غیرفعاله.",
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=create_languages_keyboard()
+        )
+    elif action == "back_to_welcome":
+        bot.edit_message_text(
+             "سلام! 👋\n"
+            "به دستیار هوش مصنوعی خوش اومدی.\n\n"
+            "برای شروع، یکی از گزینه‌های زیر رو انتخاب کن:",
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=create_welcome_keyboard()
+        )
+    elif action in ("language_fa", "language_en"):
+        bot.answer_callback_query(
+            call.id,
+            text="این قابلیت فعلاً غیرفعاله."
+        )
 
 
 if __name__ == "__main__":
