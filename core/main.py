@@ -135,6 +135,8 @@ def handle_message(message):
             stop_typing.wait(4.5)
     typing_thread = threading.Thread(target=typing_background_loop)
     typing_thread.start()
+    print("ENV URL:", repr(os.getenv("OPENAI_BASE_URL")))
+    print("REQUEST URL:", repr(OPENAI_BASE_URL))
     try:
         response = requests.post(
             OPENAI_BASE_URL,
