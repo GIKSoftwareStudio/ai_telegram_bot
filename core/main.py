@@ -138,7 +138,7 @@ def handle_message(message):
         response = requests.post(
             OPENAI_BASE_URL,
             json={
-                "message": history,
+                "messages": history,
                 "user_id":str(user_id)
             },
             timeout=90
@@ -159,9 +159,10 @@ def handle_message(message):
     except APIStatusError as e:
         logger.exception("AI API HTTP error: %s", e.status_code)
         ai_reply = f"an error occurred while processing your request {str(e)}"
-    except Exception:
+    except Exception as e:
         logger.exception("Unexpected error")
         ai_reply = "an unexpected error occurred, please try again Later"
+        print(e)
     finally:
         stop_typing.set() 
         typing_thread.join(timeout=2)
