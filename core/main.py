@@ -45,9 +45,97 @@ def create_welcome_keyboard():
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(InlineKeyboardButton("🚀 شروع گفتگو با مدل", callback_data="start_chat"),
                InlineKeyboardButton("⚙️ Settings", callback_data="open_settings"),
-               InlineKeyboardButton("🌐 زبان / Language", callback_data="open_languages")
+               InlineKeyboardButton("🌐 زبان / Language", callback_data="open_languages"),
+               InlineKeyboardButton("📖 راهنمای ربات", callback_data="open_help")
             )
     return markup
+
+def show_language_menu(chat_id, message_id=None):
+    text = (
+        "🌐 زبان موردنظرت رو انتخاب کن:\n\n"
+        "Please select your preferred language:"
+    )
+
+    if message_id:
+        bot.edit_message_text(
+            text,
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=create_languages_keyboard()
+        )
+    else:
+        bot.send_message(
+            chat_id,
+            text,
+            reply_markup=create_languages_keyboard()
+        )
+def show_bot_help(chat_id):
+    help_text = ("""🤖 **راهنمای دستیار هوشمند فروشگاه**
+
+سلام! 👋
+من دستیار هوشمند این فروشگاه هستم و می‌تونم در خرید و استفاده از خدمات فروشگاه کمکت کنم.
+
+برای شروع، کافیه پیام خودت رو به زبان طبیعی برام بنویسی.
+
+**💡 نمونه‌هایی از کارهایی که می‌تونی انجام بدی:**
+
+🛍️ **راهنمای خرید**
+- چه محصولی برای من مناسبه؟
+- تفاوت این دو محصول چیه؟
+- محصولات اقتصادی فروشگاه رو معرفی کن.
+
+📦 **پیگیری سفارش**
+- سفارش من در چه وضعیتی قرار داره؟
+- کد سفارش من ORD-1001 هست؛ بررسیش کن.
+
+💳 **اطلاعات فروشگاه**
+- شرایط ارسال سفارش چیه؟
+- امکان مرجوع کردن کالا وجود داره؟
+- چه روش‌هایی برای پرداخت دارم؟
+
+💬 **گفتگوی هوشمند**
+- درباره محصول X بیشتر توضیح بده.
+- برای خرید بهتر راهنماییم کن.
+
+**🚀 شروع کنیم؟**
+
+از منوی اصلی روی «شروع گفتگو با دستیار هوشمند» بزن و سؤالت رو بپرس.""")
+    bot.send_message(chat_id, help_text)
+
+
+
+
+
+
+
+
+
+
+
+def create_clear_history_keyboard():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton(
+            "✅ بله، پاک کن",
+            callback_data="confirm_clear_history"
+        ),
+        InlineKeyboardButton(
+            "❌ انصراف",
+            callback_data="cancel_clear_history"
+        )
+    )
+    return markup
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -55,13 +143,27 @@ def create_settings_keyboard():
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
         InlineKeyboardButton(
+            "🤖 انتخاب مدل هوش مصنوعی",
+            callback_data="select_model"
+        ),
+        InlineKeyboardButton(
+            "🗑 پاک کردن تاریخچه گفتگو",
+            callback_data="clear_history"
+        ),
+        InlineKeyboardButton(
             "⬅️ بازگشت",
             callback_data="back_to_welcome"
         )
     )
     return markup
-
-
+    
+def create_chat_keyboard():
+    markup = ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+    markup.add(KeyboardButton("🚪 Exit"))
+    return markup
 
 
 def create_languages_keyboard():
@@ -81,7 +183,19 @@ def create_languages_keyboard():
         )
     )
     return markup
-
+def create_exit_confirmation_keyboard():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton(
+            "✅ بله، خارج شو",
+            callback_data="confirm_exit"
+    ),
+    InlineKeyboardButton(
+            "❌ خیر، ادامه می‌دم",
+            callback_data="cancel_exit"
+        )
+    )
+    return markup
 
 
 
@@ -157,12 +271,22 @@ def start_command(message):
         "برای شروع، یکی از گزینه‌های زیر رو انتخاب کن:",
         reply_markup = create_welcome_keyboard()
     )
-                     
+@bot.message_handler(commands=["language"])          
+def language_command(message):
+    show_language_menu(message.chat.id)
+
 
 @bot.message_handler(content_types=["text"])
 def handle_message(message):
     user_id = message.from_user.id
     user_text = message.text
+    if user_text == "🚪 Exit":
+        bot.send_message(
+            message.chat.id,
+            "⚠️ مطمئنی می‌خوای از گفتگو خارج بشی؟",
+            reply_markup=create_exit_confirmation_keyboard()
+        )
+        return
     if user_id not in user_chat_active:
         bot.reply_to(
             message,
@@ -232,9 +356,13 @@ def handle_message(message):
         typing_thread.join(timeout=2)
     try:
         sanitized_reply = escape_markdown_v2(ai_reply)
-        # this part should be fix 
+        bot.reply_to(
+            message,
+            sanitized_reply,
+            parse_mode='MarkdownV2'
+        )
     except Exception:
-        bot.reply_to(message)
+        bot.reply_to(message, ai_reply)
     
 
 
@@ -279,7 +407,8 @@ def handle_callback_query(call):
         bot.send_message(
             chat_id,
             "💬 گفتگو با مدل شروع شد!\n"
-            "پیامت رو ارسال کن."
+            "برای بازگشت به منو، دکمه  🚪 Exit رو بزن.",
+            reply_markup=create_chat_keyboard()
         )
     elif action == "open_settings":
         bot.edit_message_text(
@@ -290,13 +419,7 @@ def handle_callback_query(call):
             reply_markup=create_settings_keyboard()
         )
     elif action == "open_languages":
-        bot.edit_message_text(
-            "🌐 انتخاب زبان / Choose language\n\n"
-            "این بخش فعلاً غیرفعاله.",
-            chat_id=chat_id,
-            message_id=message_id,
-            reply_markup=create_languages_keyboard()
-        )
+        show_language_menu(chat_id, message_id)
     elif action == "back_to_welcome":
         bot.edit_message_text(
              "سلام! 👋\n"
@@ -311,8 +434,60 @@ def handle_callback_query(call):
             call.id,
             text="این قابلیت فعلاً غیرفعاله."
         )
-
-
+    elif action == "confirm_exit":
+        user_chat_active.discard(user_id)
+        bot.answer_callback_query(
+            call.id,
+            text="از گفتگو خارج شدی."
+        )
+        bot.delete_message(chat_id, message_id)
+        bot.send_message(
+            chat_id,
+            "🏠 به منوی اصلی برگشتی.",
+            reply_markup=telebot.types.ReplyKeyboardRemove()
+        )
+        bot.send_message(
+            chat_id,
+            "برای شروع، یکی از گزینه‌های زیر رو انتخاب کن:",
+            reply_markup=create_welcome_keyboard()
+        )
+    elif action == "cancel_exit":
+        bot.answer_callback_query(
+            call.id,
+            text="ادامه گفتگو"
+        )
+        bot.delete_message(chat_id, message_id)
+        bot.send_message(
+            chat_id,
+            "💬 باشه! می‌تونیم به گفتگو ادامه بدیم.",
+            reply_markup=create_chat_keyboard()
+        )
+    elif action == "select_model":
+        bot.send_message(
+        chat_id,
+        "🤖 قابلیت انتخاب مدل هوش مصنوعی به‌زودی فعال می‌شود."
+    )
+    elif action == "clear_history":
+        bot.send_message(
+        chat_id,
+        "⚠️ مطمئنی می‌خوای تمام تاریخچه گفتگوت با مدل پاک بشه؟",
+        reply_markup=create_clear_history_keyboard()
+    )
+    elif action == "confirm_clear_history":
+        clear_user_history_db(user_id)
+        bot.edit_message_text(
+            "✅ تاریخچه گفتگوی شما با موفقیت پاک شد.",
+            chat_id=chat_id,
+            message_id=message_id
+    )
+    elif action == "cancel_clear_history":
+        bot.edit_message_text(
+            "❌ عملیات پاک کردن تاریخچه لغو شد.",
+            chat_id=chat_id,
+            message_id=message_id
+        )
+    elif action == "open_help":
+        show_bot_help(chat_id)
 if __name__ == "__main__":
     init_db()
     print("Bot is running...")
