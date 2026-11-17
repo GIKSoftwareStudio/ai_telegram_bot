@@ -491,5 +491,5 @@ def handle_callback_query(call):
 if __name__ == "__main__":
     init_db()
     print("Bot is running...")
-    bot.infinity_polling()
+    bot.infinity_polling(timeout=35, long_polling_timeout=30)
 
